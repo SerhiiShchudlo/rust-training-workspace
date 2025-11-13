@@ -3,5 +3,9 @@
 version = 4
 
 [[package]]
+name = "linked_list"
+version = "0.1.0"
+
+[[package]]
 name = "text_hashmap"
 version = "0.1.0"
