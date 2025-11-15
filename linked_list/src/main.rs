@@ -29,9 +29,7 @@ impl<T> Node<T> {
             next: self.next.take(),
         });
 
-        self.next = Some(new_node);
-
-        self.next.as_mut().expect("Error")
+        self.next.insert(new_node)
     }
 
     /// returns iterator over by-ref values
@@ -47,13 +45,8 @@ impl<T> Drop for Node<T> {
 
         let mut curr = self.next.take();
 
-        loop {
-            match curr {
-                Some(mut node) => {
-                    curr = node.next.take();
-                }
-                None => break,
-            }
+        while let Some(mut node) = curr {
+            curr = node.next.take();
         }
     }
 }
@@ -64,20 +57,14 @@ impl<T: Debug> Debug for Node<T> {
 
         write!(f, "[")?;
 
-        let mut first_node = true;
+        let mut delim = "";
 
         for value in self.iter() {
-            if !first_node {
-                write!(f, ",")?;
-            } else {
-                first_node = false;
-            }
-            write!(f, "{value:?}")?;
+            write!(f, "{delim}{value:?}")?;
+            delim = ",";
         }
 
-        write!(f, "]")?;
-
-        Ok(())
+        write!(f, "]")
     }
 }
 
@@ -91,9 +78,7 @@ impl<T: Clone> Clone for Node<T> {
         let mut new_list_node = &mut new_head;
 
         while let Some(node) = old_list_node {
-            new_list_node.next = Some(Box::new(Node::new(node.value.clone())));
-            new_list_node = new_list_node.next.as_mut().expect("Error");
-
+            new_list_node = new_list_node.next.insert(Box::new(Node::new(node.value.clone())));
             old_list_node = &node.next;
         }
 
@@ -106,14 +91,11 @@ impl<'a, T> Iterator for NodeRefIter<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.current {
-            Some(node) => {
-                let result = &node.value;
-                self.current = node.next.as_deref();
-                Some(result)
-            }
-            None => None,
-        }
+
+        let result = self.current?;
+        self.current = result.next.as_deref();
+
+        Some(&result.value)
     }
 }
 
