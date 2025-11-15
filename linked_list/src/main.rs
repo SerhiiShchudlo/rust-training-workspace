@@ -11,6 +11,11 @@ struct NodeRefIter<'a, T> {
     current: Option<&'a Node<T>>,
 }
 
+/// linked list by-value iterator
+struct NodeIntoIter<T> {
+    current: Option<Node<T>>,
+}
+
 impl<T> Node<T> {
     /// creates new node with provided value
     fn new(value: T) -> Node<T> {
@@ -37,6 +42,17 @@ impl<T> Node<T> {
         NodeRefIter {
             current: Some(self)
         }
+    }
+
+    /// consumes linked list and returns a new one with items
+    /// that pass a filter or None when no items left
+    fn retain(self, filter: impl FnMut(&T) -> bool) -> Option<Self> {
+        todo!()
+    }
+
+    /// consumes linked list and returns an iterator that provides original values
+    fn into_iter(self) -> NodeIntoIter<T> {
+        todo!()
     }
 }
 
@@ -96,6 +112,14 @@ impl<'a, T> Iterator for NodeRefIter<'a, T> {
         self.current = result.next.as_deref();
 
         Some(&result.value)
+    }
+}
+
+impl<T> Iterator for NodeIntoIter<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        todo!()
     }
 }
 
@@ -161,5 +185,35 @@ mod tests {
         }
         // did it panic?
         // No. The custom Drop implementation uses a loop, which avoids deep recursion and prevents a stack overflow
+    }
+
+    #[test]
+    fn test_retain_some() {
+        let node = new_1_to_4();
+        let node = node.retain(|e| e % 2 == 0).unwrap();
+        assert_eq!(Vec::from_iter(node.iter().copied()), [2, 4]);
+    }
+
+    #[test]
+    fn test_retain_none() {
+        let node = new_1_to_4();
+        let node = node.retain(|_| false);
+        assert!(node.is_none());
+    }
+
+    #[test]
+    fn test_into_iter() {
+        fn is_static<T: 'static>(value: T) -> T {
+            value
+        }
+
+        let mut node = Node::new("1".to_string());
+        node.insert("2".to_string()).insert("3".to_string());
+
+        let mut iter = node.into_iter();
+        assert_eq!(is_static(iter.next()), Some("1".to_string()));
+        assert_eq!(is_static(iter.next()), Some("2".to_string()));
+        assert_eq!(is_static(iter.next()), Some("3".to_string()));
+        assert_eq!(is_static(iter.next()), None);
     }
 }
