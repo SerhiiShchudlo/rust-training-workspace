@@ -14,38 +14,75 @@ struct NodeRefIter<'a, T> {
 impl<T> Node<T> {
     /// creates new node with provided value
     fn new(value: T) -> Node<T> {
-        todo!()
+        Node {
+            value: value,
+            next: None,
+        }
     }
 
     /// insert a value after this one
     /// returns mut reference to the newly added node
     fn insert(&mut self, next: T) -> &mut Node<T> {
-        todo!()
+
+        let new_node = Box::new(Node {
+            value: next,
+            next: self.next.take(),
+        });
+
+        self.next.insert(new_node)
     }
 
     /// returns iterator over by-ref values
     fn iter(&self) -> NodeRefIter<'_, T> {
-        todo!()
+        NodeRefIter {
+            current: Some(self)
+        }
     }
 }
 
 impl<T> Drop for Node<T> {
     fn drop(&mut self) {
-        todo!()
+
+        let mut curr = self.next.take();
+
+        while let Some(mut node) = curr {
+            curr = node.next.take();
+        }
     }
 }
 
 /// formats liked list as "[1,2,3]" string
 impl<T: Debug> Debug for Node<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        todo!()
+
+        write!(f, "[")?;
+
+        let mut delim = "";
+
+        for value in self.iter() {
+            write!(f, "{delim}{value:?}")?;
+            delim = ",";
+        }
+
+        write!(f, "]")
     }
 }
 
 /// clones the linked list
 impl<T: Clone> Clone for Node<T> {
     fn clone(&self) -> Self {
-        todo!()
+
+        let mut new_head = Node::new(self.value.clone());
+
+        let mut old_list_node = &self.next;
+        let mut new_list_node = &mut new_head;
+
+        while let Some(node) = old_list_node {
+            new_list_node = new_list_node.next.insert(Box::new(Node::new(node.value.clone())));
+            old_list_node = &node.next;
+        }
+
+        new_head
     }
 }
 
@@ -54,7 +91,11 @@ impl<'a, T> Iterator for NodeRefIter<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        todo!()
+
+        let result = self.current?;
+        self.current = result.next.as_deref();
+
+        Some(&result.value)
     }
 }
 
@@ -119,5 +160,6 @@ mod tests {
             node.insert(index);
         }
         // did it panic?
+        // No. The custom Drop implementation uses a loop, which avoids deep recursion and prevents a stack overflow
     }
 }
