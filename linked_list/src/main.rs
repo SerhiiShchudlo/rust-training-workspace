@@ -2,7 +2,7 @@ use std::fmt::{Debug, Formatter};
 
 /// singly linked list node
 struct Node<T> {
-    value: T,
+    value: Option<T>,
     next: Option<Box<Node<T>>>,
 }
 
@@ -20,7 +20,7 @@ impl<T> Node<T> {
     /// creates new node with provided value
     fn new(value: T) -> Node<T> {
         Node {
-            value: value,
+            value: Some(value),
             next: None,
         }
     }
@@ -30,7 +30,7 @@ impl<T> Node<T> {
     fn insert(&mut self, next: T) -> &mut Node<T> {
 
         let new_node = Box::new(Node {
-            value: next,
+            value: Some(next),
             next: self.next.take(),
         });
 
@@ -40,19 +40,45 @@ impl<T> Node<T> {
     /// returns iterator over by-ref values
     fn iter(&self) -> NodeRefIter<'_, T> {
         NodeRefIter {
-            current: Some(self)
+            current: Some(self),
         }
     }
 
     /// consumes linked list and returns a new one with items
     /// that pass a filter or None when no items left
-    fn retain(self, filter: impl FnMut(&T) -> bool) -> Option<Self> {
-        todo!()
+    fn retain(self, mut filter: impl FnMut(&T) -> bool) -> Option<Self> {
+        let mut current = Some(self);
+
+        while let Some(mut node) = current {
+            if filter(node.value.as_ref().unwrap()) {
+                let mut tail = &mut node;
+                let mut next_link = tail.next.take();
+
+                while let Some(next_link_boxed) = next_link {
+                    let mut candidate = *next_link_boxed;
+                    if filter(candidate.value.as_ref().unwrap()) {
+                        tail.next = Some(Box::new(candidate));
+                        tail = tail.next.as_deref_mut().unwrap();
+                        next_link = tail.next.take();
+                    } else {
+                        next_link = candidate.next.take();
+                    }
+                }
+
+                return Some(node);
+            } else {
+                current = node.next.take().map(|next_link_boxed| *next_link_boxed);
+            }
+        }
+
+        None
     }
 
     /// consumes linked list and returns an iterator that provides original values
     fn into_iter(self) -> NodeIntoIter<T> {
-        todo!()
+        NodeIntoIter {
+            current: Some(self),
+        }
     }
 }
 
@@ -88,13 +114,15 @@ impl<T: Debug> Debug for Node<T> {
 impl<T: Clone> Clone for Node<T> {
     fn clone(&self) -> Self {
 
-        let mut new_head = Node::new(self.value.clone());
+        let mut new_head = Node::new(self.value.as_ref().unwrap().clone());
 
         let mut old_list_node = &self.next;
         let mut new_list_node = &mut new_head;
 
         while let Some(node) = old_list_node {
-            new_list_node = new_list_node.next.insert(Box::new(Node::new(node.value.clone())));
+            new_list_node = new_list_node
+                .next
+                .insert(Box::new(Node::new(node.value.as_ref().unwrap().clone())));
             old_list_node = &node.next;
         }
 
@@ -111,7 +139,7 @@ impl<'a, T> Iterator for NodeRefIter<'a, T> {
         let result = self.current?;
         self.current = result.next.as_deref();
 
-        Some(&result.value)
+        Some(result.value.as_ref().unwrap())
     }
 }
 
@@ -119,7 +147,10 @@ impl<T> Iterator for NodeIntoIter<T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        todo!()
+        let mut node = self.current.take()?;
+        let value = node.value.take().unwrap();
+        self.current = node.next.take().map(|next_link_boxed| *next_link_boxed);
+        Some(value)
     }
 }
 
