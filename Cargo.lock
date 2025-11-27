@@ -3,6 +3,10 @@
 version = 4
 
 [[package]]
+name = "file_indexer"
+version = "0.1.0"
+
+[[package]]
 name = "linked_list"
 version = "0.1.0"
 
