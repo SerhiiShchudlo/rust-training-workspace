@@ -5,8 +5,10 @@ use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
+use serde_json;
+use anyhow::Result;
 
-fn main() -> io::Result<()> {
+fn main() -> Result<()> {
     let root = Path::new("/home/serhii/texts");
 
     let mut files = Vec::new();
@@ -62,7 +64,8 @@ fn main() -> io::Result<()> {
         }
     }
 
-    println!("{result_map:#?}");
+    let result_map_json = serde_json::to_string_pretty(&result_map)?;
+    println!("{result_map_json}");
 
     Ok(())
 }
