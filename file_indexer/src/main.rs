@@ -3,6 +3,8 @@ use std::fs;
 use std::io;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
 
 fn main() -> io::Result<()> {
     let root = Path::new("/home/serhii/texts");
@@ -10,20 +12,53 @@ fn main() -> io::Result<()> {
     let mut files = Vec::new();
     collect_files(root, &mut files)?;
 
-    let mut result_map: HashMap<String, HashMap<String, Vec<usize>>> = HashMap::new();
+    let max_threads_count = thread::available_parallelism()?.get();
+    let (tx_paths, rx_paths) = mpsc::channel::<PathBuf>();
+    let (tx_results, rx_results) = mpsc::channel::<(String, HashMap<String, Vec<usize>>)>();
+    let rx_paths = Arc::new(Mutex::new(rx_paths));
 
     for path in files {
-        match index_file(&path) {
-            Ok(file_index) => {
-                let file_key = path.display().to_string();
-                for (word, positions) in file_index {
-                    result_map
-                        .entry(word)
-                        .or_default()
-                        .insert(file_key.clone(), positions);
+        tx_paths.send(path).unwrap();
+    }
+    drop(tx_paths);
+
+    let threads: Vec<_> = (0..max_threads_count)
+        .map(|_| {
+            let rx = Arc::clone(&rx_paths);
+            let tx = tx_results.clone();
+            thread::spawn(move || loop {
+                let next_path = {
+                    let locked = rx.lock().unwrap();
+                    locked.recv()
+                };
+
+                match next_path {
+                    Ok(path) => {
+                        if let Ok(map) = index_file(&path) {
+                            let _ = tx.send((path.display().to_string(), map));
+                        }
+                    }
+                    Err(_) => break,
                 }
-            }
-            Err(_) => println!("Failed to index {}", path.display()),
+            })
+        })
+        .collect();
+    drop(tx_results);
+
+    let mut result_map: HashMap<String, HashMap<String, Vec<usize>>> = HashMap::new();
+    for (file, file_index) in rx_results {
+        for (word, positions) in file_index {
+            result_map
+                .entry(word)
+                .or_default()
+                .insert(file.clone(), positions);
+        }
+    }
+
+    for thread in threads {
+        match thread.join() {
+            Ok(_) => {}
+            Err(_) => println!("Worker thread error"),
         }
     }
 
