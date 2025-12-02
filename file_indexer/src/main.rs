@@ -14,38 +14,42 @@ fn main() -> Result<()> {
     let mut files = Vec::new();
     collect_files(root, &mut files)?;
 
-    let max_threads_count = thread::available_parallelism()?.get();
-    let (tx_paths, rx_paths) = mpsc::channel::<PathBuf>();
+    let max_threads_count = thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(3);
     let (tx_results, rx_results) = mpsc::channel::<(String, HashMap<String, Vec<usize>>)>();
-    let rx_paths = Arc::new(Mutex::new(rx_paths));
+    let rx = Arc::new(Mutex::new(files));
 
-    for path in files {
-        tx_paths.send(path).unwrap();
-    }
-    drop(tx_paths);
+    thread::scope(|scope| {
+        let threads: Vec<_> = (0..max_threads_count)
+            .map(|_| {
+                let rx = Arc::clone(&rx);
+                let tx = tx_results.clone();
+                scope.spawn(move || loop {
+                    let next_path = {
+                        rx.lock().unwrap().pop()
+                    };
 
-    let threads: Vec<_> = (0..max_threads_count)
-        .map(|_| {
-            let rx = Arc::clone(&rx_paths);
-            let tx = tx_results.clone();
-            thread::spawn(move || loop {
-                let next_path = {
-                    let locked = rx.lock().unwrap();
-                    locked.recv()
-                };
-
-                match next_path {
-                    Ok(path) => {
-                        if let Ok(map) = index_file(&path) {
-                            let _ = tx.send((path.display().to_string(), map));
+                    match next_path {
+                        Some(path) => {
+                            if let Ok(map) = index_file(&path) {
+                                let _ = tx.send((path.display().to_string(), map));
+                            }
                         }
+                        None => break,
                     }
-                    Err(_) => break,
-                }
+                })
             })
-        })
-        .collect();
-    drop(tx_results);
+            .collect();
+
+        drop(tx_results);
+
+        for thread in threads {
+            if let Err(e) = thread.join() {
+                println!("Worker thread error: {e:?}");
+            }
+        }
+    });
 
     let mut result_map: HashMap<String, HashMap<String, Vec<usize>>> = HashMap::new();
     for (file, file_index) in rx_results {
@@ -54,13 +58,6 @@ fn main() -> Result<()> {
                 .entry(word)
                 .or_default()
                 .insert(file.clone(), positions);
-        }
-    }
-
-    for thread in threads {
-        match thread.join() {
-            Ok(_) => {}
-            Err(_) => println!("Worker thread error"),
         }
     }
 
