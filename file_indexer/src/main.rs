@@ -3,31 +3,54 @@ use std::fs;
 use std::io;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
+use std::sync::{mpsc, Mutex};
+use std::thread;
+use serde_json;
+use anyhow::Result;
 
-fn main() -> io::Result<()> {
+fn main() -> Result<()> {
     let root = Path::new("/home/serhii/texts");
 
     let mut files = Vec::new();
     collect_files(root, &mut files)?;
 
-    let mut result_map: HashMap<String, HashMap<String, Vec<usize>>> = HashMap::new();
+    let max_threads_count = thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(3);
+    let (tx_results, rx_results) = mpsc::channel::<(String, HashMap<String, Vec<usize>>)>();
+    let rx = Mutex::new(files);
 
-    for path in files {
-        match index_file(&path) {
-            Ok(file_index) => {
-                let file_key = path.display().to_string();
-                for (word, positions) in file_index {
-                    result_map
-                        .entry(word)
-                        .or_default()
-                        .insert(file_key.clone(), positions);
+    thread::scope(|scope| {
+        for _ in 0..max_threads_count {
+            scope.spawn(|| loop {
+                let next_path = &rx.lock().unwrap().pop();
+
+                match next_path {
+                    Some(path) => {
+                        if let Ok(map) = index_file(&path) {
+                            let _ = tx_results.send((path.display().to_string(), map));
+                        }
+                    }
+                    None => break,
                 }
-            }
-            Err(_) => println!("Failed to index {}", path.display()),
+            });
+        }
+    });
+
+    drop(tx_results);
+
+    let mut result_map: HashMap<String, HashMap<String, Vec<usize>>> = HashMap::new();
+    for (file, file_index) in rx_results {
+        for (word, positions) in file_index {
+            result_map
+                .entry(word)
+                .or_default()
+                .insert(file.clone(), positions);
         }
     }
 
-    println!("{result_map:#?}");
+    let result_map_json = serde_json::to_string_pretty(&result_map)?;
+    println!("{result_map_json}");
 
     Ok(())
 }
